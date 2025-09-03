@@ -1,7 +1,7 @@
 // BasicExample.ino
 
 #include <Arduino.h>
-#include <ArduinoJsonV6Compat.h> // v6 호환성 래퍼 라이브러리 include
+#include <ArduinoJson_V6toV7_Compat_v002.h> // v6 호환성 래퍼 라이브러리 include
 
 // v6 스타일의 DynamicJsonDocument를 사용합니다.
 DynamicJsonDocument doc(256);
