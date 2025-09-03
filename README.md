@@ -15,7 +15,6 @@
 - `serializeJson(..., String&)` → v6처럼 **append 동작** 복원  
 - `capacity()`, `memoryUsage()`, `garbageCollect()`, `shallowCopy()` → 더 이상 의미 없으나 **스텁 제공**  
 - `overflowed()` → v7의 권장 API를 그대로 노출  
-- 오타 대응 매크로(`createnestarray`, `createneastedobject` 등)까지 지원  
 - `jsonArraySize()`, `jsonObjectSize()` 헬퍼 제공 → v6 스타일 코드 호환  
 
 ---
