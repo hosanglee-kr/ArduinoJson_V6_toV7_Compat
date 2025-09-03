@@ -72,21 +72,6 @@ void setup() {
     Serial.println(output);
   }
 
-  // =======================================================
-  // Case 3: 오타 흡수 매크로 테스트 (v6 스타일)
-  // =======================================================
-  Serial.println("\n--- Case 3: Typo Macro Test ---");
-  // 흔한 오타인 'createnestarray'와 'createneastedobject'를 사용
-  DynamicJsonDocument doc2(128);
-  JsonObject root2 = doc2.to<JsonObject>();
-  JsonObject device2 = root2.createneastedobject("device");
-  JsonArray values = device2.createnestarray("values");
-  values.add(1);
-  values.add(2);
-
-  Serial.println("오타 매크로를 사용해 생성된 JSON:");
-  serializeJson(doc2, Serial);
-  Serial.println();
 }
 
 void loop() {
