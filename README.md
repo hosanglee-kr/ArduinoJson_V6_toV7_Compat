@@ -1,0 +1,1 @@
+# ArduinoJson_V6_toV7_Compat
