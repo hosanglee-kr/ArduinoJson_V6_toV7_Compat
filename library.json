@@ -1,0 +1,41 @@
+{
+  "name": "ArduinoJson V6 to V7 Compat",
+  "version": "0.3.0",
+  "description": "Compatibility wrapper to run ArduinoJson v6-style code on v7 without major source changes.",
+  "keywords": [
+    "json",
+    "arduinojson",
+    "compatibility",
+    "migration",
+    "wrapper"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your/repo"
+  },
+  "authors": [
+    {
+      "name": "Your Name",
+      "maintainer": true,
+      "email": "you@example.com"
+    }
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/your/repo",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "dependencies": [
+    {
+      "name": "ArduinoJson",
+      "owner": "bblanchon",
+      "version": "^7.0.0"
+    }
+  ],
+  "examples": [
+    "examples/*/*.ino"
+  ],
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src"
+  }
+}
