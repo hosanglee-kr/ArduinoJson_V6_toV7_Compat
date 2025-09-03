@@ -1,0 +1,319 @@
+name: Build Template
+
+on:
+  workflow_call:
+    inputs:
+      args:
+        type: string
+        required: false
+        default: ""             # 공백 구분으로 여러 보드 가능 예: "esp32dev esp32-s3-devkitc-1 uno"
+      platform:
+        type: string
+        required: false
+        default: ""             # 특별히 필요한 PIO 플랫폼 패키지 있으면 전달
+      runs-on:
+        type: string
+        required: false
+        default: "ubuntu-latest"
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # disabled for now.
+      #- name: Cache .build directory
+      #  uses: actions/cache@v3
+      #  with:
+      #    path: ./.build
+      #    key: ${{ runner.os }}-build-${{ hashFiles('./ci/**') }}
+      #    restore-keys: |
+      #      ${{ runner.os }}-build-
+
+      - name: Pin python version
+        run: |
+          echo "3.11" >> .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+          version: "0.8.0"
+
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install CCACHE
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ccache
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install ccache
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            choco install ccache
+          fi
+        shell: bash
+
+      - name: Setup CCACHE
+        run: |
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=true" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=400M" >> $GITHUB_ENV
+          ccache --version
+          ccache --show-stats
+          ccache --zero-stats
+        shell: bash
+
+      - name: Cache CCACHE directory
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Install PlatformIO Core
+        run: |
+          uv run pip install --upgrade platformio
+          uv run pio --version
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Install Platform (optional)
+        if: inputs.platform != ''
+        run: |
+          uv run pio pkg -g install ${{ inputs.platform }}
+
+      - name: PlatformIO Versions
+        run: |
+          uv run platformio --version
+
+      - name: Build all examples with PlatformIO CI
+        id: build_examples
+        run: |
+          set -o pipefail
+          mkdir -p failures
+          : > build.log
+
+          # 빌드 대상 보드 목록 결정
+          BOARD_LIST="${{ inputs.args }}"
+          if [ -z "$BOARD_LIST" ]; then
+            # 기본값! 필요에 맞게 수정 가능
+            BOARD_LIST="esp32dev esp32-s3-devkitc-1 uno"
+          fi
+          echo "Boards: $BOARD_LIST" | tee -a build.log
+
+          # 예제 스케치 찾기
+          mapfile -t EXAMPLES < <(find examples -type f -name "*.ino" -print | sort)
+          if [ ${#EXAMPLES[@]} -eq 0 ]; then
+            echo "No examples found under ./examples" | tee -a build.log
+            exit 1
+          fi
+
+          # 각 예제를 모든 보드로 빌드
+          FAIL=0
+          for ex in "${EXAMPLES[@]}"; do
+            echo "==============================================" | tee -a build.log
+            echo "Example: $ex" | tee -a build.log
+            for b in $BOARD_LIST; do
+              echo "---- Board: $b" | tee -a build.log
+              # pio ci는 라이브러리 루트를 --lib "." 로 지정
+              # deep+ LDF와 C++17 가정, 필요시 조정
+              uv run pio ci "$ex" \
+                --lib="." \
+                --board "$b" \
+                --project-option="lib_ldf_mode=deep+" \
+                --project-option="build_unflags=" \
+                --project-option="build_flags=" \
+                2>&1 | tee -a build.log
+              STATUS=${PIPESTATUS[0]}
+              if [ $STATUS -ne 0 ]; then
+                FAIL=1
+                # 실패 로그 개별 저장
+                bn=$(basename "$ex" .ino)
+                log="failures/${bn}_${b}.log"
+                echo "[FAILED] $ex on $b" | tee -a build.log
+                echo "See $log"
+                # 마지막 빌드 출력 일부 저장
+                tail -n 400 build.log > "$log" || true
+              else
+                echo "[OK] $ex on $b" | tee -a build.log
+              fi
+            done
+          done
+
+          # ccache 통계
+          echo "--------- ccache stats ---------" | tee -a build.log
+          ccache --show-stats | tee -a build.log
+
+          if [ $FAIL -ne 0 ]; then
+            echo "One or more builds failed"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Build summary and failure logs
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "############################################"
+          echo "Last 100 lines of build.log (most recent output)"
+          echo "############################################"
+          tail -n 100 build.log || true
+
+          echo ""
+          echo "############################################"
+          echo "Failure logs (if any)"
+          echo "############################################"
+          fail_dir="failures"
+          if [ -d "$fail_dir" ] && ls "$fail_dir"/*.log >/dev/null 2>&1; then
+            for f in "$fail_dir"/*.log; do
+              echo "----------------------"
+              echo "$(basename "$f")"
+              echo "----------------------"
+              cat "$f"
+              echo ""
+            done
+          else
+            echo "ALL EXAMPLES SUCCESSFULLY COMPILED"
+          fi
+        shell: bash
+
+      - name: Find platformio.ini file and print it out
+        if: always()
+        continue-on-error: true
+        run: |
+          platformio_ini=$(find . -type f -name platformio.ini | head -n 1)
+          if [ -f "$platformio_ini" ]; then
+            echo "Found platformio.ini at: $platformio_ini"
+            echo "############################################"
+            cat "$platformio_ini"
+            echo "############################################"
+          else
+            echo "platformio.ini not found"
+          fi
+
+      # 아래 단계들은 템플릿의 논리 유지용으로 남겨두지만,
+      # 이 저장소에 맞는 ci/*.py 스크립트가 없다면 자동으로 skip/무시됩니다.
+      - name: Build Blink.ino for library info
+        continue-on-error: true
+        run: |
+          if [ -f "ci/ci-compile.py" ]; then
+            uv run ci/ci-compile.py ${{ inputs.args }} --examples Blink
+          else
+            echo "ci/ci-compile.py not present, skipping"
+          fi
+        shell: bash
+
+      - name: Print out build_info.json
+        if: always()
+        run: |
+          build_info=$(find . -name build_info.json | head -n 1)
+          if [ -f "$build_info" ]; then
+            cat "$build_info"
+          else
+            echo "build_info.json not found"
+          fi
+
+      - name: CPP Check
+        run: |
+          if [ -f "ci/ci-cppcheck.py" ]; then
+            python -c "print('${{ inputs.args }}'.split()[0] if '${{ inputs.args }}' else 'esp32dev')" > board.txt
+            cat board.txt | xargs -I {} uv run ci/ci-cppcheck.py {}
+          else
+            echo "ci/ci-cppcheck.py not present, skipping"
+          fi
+        shell: bash
+
+      - name: Check Compiled size of last compiled example
+        continue-on-error: true
+        run: |
+          if [ -f "ci/ci-check-compiled-size.py" ]; then
+            uv run ci/ci-check-compiled-size.py ${{ inputs.args }} --no-build
+          else
+            echo "ci/ci-check-compiled-size.py not present, skipping"
+          fi
+
+      - name: Inspect Binary
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f "ci/inspect_binary.py" ]; then
+            uv run ci/inspect_binary.py --first
+          else
+            echo "ci/inspect_binary.py not present, skipping"
+          fi
+
+      - name: Inspect Elf
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f "ci/inspect_elf.py" ]; then
+            uv run ci/inspect_elf.py --first
+          else
+            echo "ci/inspect_elf.py not present, skipping"
+          fi
+
+      - name: Optimization Report
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f "ci/optimization_report.py" ]; then
+            uv run ci/optimization_report.py --first
+          else
+            echo "ci/optimization_report.py not present, skipping"
+          fi
+
+      - name: Symbol Analysis
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f "ci/symbol_analysis_runner.py" ]; then
+            python -c "print('${{ inputs.args }}'.split()[0] if '${{ inputs.args }}' else 'esp32dev')" > board.txt
+            cat board.txt | xargs -I {} uv run ci/symbol_analysis_runner.py --board {} --example Blink --skip-on-failure
+          else
+            echo "ci/symbol_analysis_runner.py not present, skipping"
+          fi
+        shell: bash
+
+      - name: Generate timestamp and random hex
+        id: generate_id
+        run: |
+          echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+          echo "random_hex=$(openssl rand -hex 3)" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ steps.generate_id.outputs.timestamp }}-${{ github.sha }}-${{ steps.generate_id.outputs.random_hex }}
+          path: .pio/
+          include-hidden-files: true
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ steps.generate_id.outputs.timestamp }}-${{ github.sha }}-${{ steps.generate_id.outputs.random_hex }}
+          path: build.log
+
+      - name: Check build status
+        if: failure()
+        run: exit 1
