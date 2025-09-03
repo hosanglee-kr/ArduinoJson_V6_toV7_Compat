@@ -31,7 +31,8 @@
 #endif
 
 namespace AJv6 {
-  using AJ = ::ArduinoJson;
+  namespace AJ = ::ArduinoJson;
+  // using AJ = ::ArduinoJson;
 
   // -------- DocCompat --------
   struct DocCompat : public AJ::JsonDocument {
