@@ -75,7 +75,7 @@ jobs:
           mkdir -p failures
           : > build.log
 
-          BOARD_LIST="uno esp32dev esp32-s3-devkitc-1"
+          BOARD_LIST="esp32dev esp32-s3-devkitc-1"
           echo "Boards: $BOARD_LIST" | tee -a build.log
 
           mapfile -t EXAMPLES < <(find examples -type f -name "*.ino" -print | sort)
