@@ -1,4 +1,4 @@
-// ArduinoJsonV6Compat_v001.h
+// ArduinoJson_V6toV7_Compat_v001.h
 
 #pragma once
 // ArduinoJson v6에서 v7로 마이그레이션을 위한 호환성 래퍼 (Wrapper)
