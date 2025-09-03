@@ -11,7 +11,7 @@
 // 참고: https://arduinojson.org/v7/how-to/upgrade-from-v6/
 
 #include <Arduino.h>
-#include <ArduinoJson_V6toV7_Compat_v003.h>  // v6 호환성 래퍼
+#include <ArduinoJson_V6toV7_Compat_v002.h>  // v6 호환성 래퍼
 
 // v6 스타일: 용량(capacity) 인자 사용 (호환 래퍼에서 무시됨)
 StaticJsonDocument<256> staticDoc_v6;
