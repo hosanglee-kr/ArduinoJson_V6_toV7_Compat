@@ -1,7 +1,7 @@
 // AdvancedExample.ino
 
 #include <Arduino.h>
-#include <ArduinoJsonV6Compat.h>
+#include <ArduinoJson_V6toV7_Compat_v002.h>
 
 // v6 스타일의 DynamicJsonDocument와 StaticJsonDocument를 사용합니다.
 // v6에서 메모리 용량을 계산하던 것과 달리, v7 래퍼는 이 용량 인자를 무시합니다.
