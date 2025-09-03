@@ -1,8 +1,16 @@
-// ArduinoJson_V6toV7_Compat_v002.h
 
+
+// ArduinoJson_V6toV7_Compat_v002.h
 #pragma once
 // ArduinoJson v6 -> v7 호환 래퍼
-// 가이드: https://arduinojson.org/v7/how-to/upgrade-from-v6/
+// 참고: https://arduinojson.org/v7/how-to/upgrade-from-v6/
+//
+// ⚠️ 주의사항
+// 이 래퍼는 "컴파일 호환"을 위한 것이며,
+// 실제 동작은 모두 v7 API에 위임됩니다.
+// capacity()/memoryUsage()/shallowCopy() 등은 더 이상 의미가 없습니다.
+// 장기적으로는 v7 API로 직접 마이그레이션 권장합니다.
+//
 
 #include <ArduinoJson.h>
 #if __has_include(<Arduino.h>)
@@ -11,7 +19,7 @@
   #include <WString.h>
 #endif
 
-// --- v6 용량 매크로 더미: 컴파일 호환 전용, 사용 지양 ---
+// --- v6 용량 매크로 더미 (컴파일 호환 전용, 사용 지양) ---
 #ifndef JSON_OBJECT_SIZE
 #define JSON_OBJECT_SIZE(n) 0
 #endif
@@ -25,26 +33,27 @@
 namespace AJv6 {
   using AJ = ::ArduinoJson;
 
-  // -------- DocCompat: JsonDocument 호환 래퍼 --------
+  // -------- DocCompat --------
   struct DocCompat : public AJ::JsonDocument {
     explicit DocCompat(size_t /*capacity*/ = 0) : AJ::JsonDocument() {}
     explicit DocCompat(AJ::Allocator* allocPtr) : AJ::JsonDocument(allocPtr) {}
 
-    // v6 제거 API의 안전한 스텁들
-    size_t capacity() const { return 0; }                 // v7: 의미 없음
-    size_t memoryUsage() const { return 0; }              // v7: 의미 없음
-    void   garbageCollect() {}                            // v7: 자동 재사용
-    void   shrinkToFit() { AJ::JsonDocument::shrinkToFit(); } // 여전히 존재, 필요 드뭄
-    bool   overflowed() const { return AJ::JsonDocument::overflowed(); } // v7 권장 확인
+    // v6 제거 API 스텁
+    size_t capacity() const { return 0; }
+    size_t memoryUsage() const { return 0; }
+    void   garbageCollect() {}
+    void   shrinkToFit() { AJ::JsonDocument::shrinkToFit(); }
+
+    // v7에서 권장: overflowed()
+    bool   overflowed() const { return AJ::JsonDocument::overflowed(); }
 
     template <typename T>
-    void shallowCopy(const T& /*src*/) {
-      // v7: 얕은 복사 불가, 대입은 항상 깊은 복사
-      // 가이드를 따라 호출부 리팩토링 권장
+    void shallowCopy(const T&) {
+      // v7: 얕은 복사 불가, 항상 deep copy
     }
   };
 
-  // -------- JsonObject / JsonArray 호환 래퍼 --------
+  // -------- JsonObjectCompat --------
   struct JsonObjectCompat {
     AJ::JsonObject impl;
     JsonObjectCompat() = default;
@@ -55,7 +64,7 @@ namespace AJv6 {
     const AJ::JsonObject* operator->() const { return &impl; }
     explicit operator bool() const { return impl.operator bool(); }
 
-    // v6: createNestedArray/Object("k") → v7: ["k"].to<...>()
+    // v6 → v7 변환
     AJ::JsonArray createNestedArray(const char* key) { return impl[key].to<AJ::JsonArray>(); }
 #if __has_include(<Arduino.h>) || __has_include(<WString.h>)
     AJ::JsonArray createNestedArray(const String& key) { return impl[key].to<AJ::JsonArray>(); }
@@ -72,7 +81,6 @@ namespace AJv6 {
     AJ::JsonObject createNestedObject(const __FlashStringHelper* key) { return impl[key].to<AJ::JsonObject>(); }
 #endif
 
-    // v6 containsKey 대체
     bool containsKey(const char* key) const { return !impl[key].isNull(); }
 #if __has_include(<Arduino.h>) || __has_include(<WString.h>)
     bool containsKey(const String& key) const { return !impl[key].isNull(); }
@@ -80,10 +88,9 @@ namespace AJv6 {
 #ifdef PROGMEM
     bool containsKey(const __FlashStringHelper* key) const { return !impl[key].isNull(); }
 #endif
-    // 가이드 권장 패턴 예시
-    // if (impl["k"].is<int>()) { ... }  // 존재 + 타입검사 동시 수행
   };
 
+  // -------- JsonArrayCompat --------
   struct JsonArrayCompat {
     AJ::JsonArray impl;
     JsonArrayCompat() = default;
@@ -94,7 +101,6 @@ namespace AJv6 {
     const AJ::JsonArray* operator->() const { return &impl; }
     explicit operator bool() const { return impl.operator bool(); }
 
-    // v6: createNestedArray/Object() → v7: add<...>()
     AJ::JsonArray  createNestedArray()  { return impl.add<AJ::JsonArray>(); }
     AJ::JsonObject createNestedObject() { return impl.add<AJ::JsonObject>(); }
   };
@@ -111,12 +117,10 @@ namespace AJv6 {
   template <size_t N>
   struct StaticJsonDocument : public DocCompat {
     StaticJsonDocument() : DocCompat(N) {}
-    static constexpr size_t kCapacity = N; // 호환 상수
+    static constexpr size_t kCapacity = N;
   };
 
-  // -------- BasicJsonDocument<Allocator> 호환 --------
-  // v7 권장: Allocator 상속 → JsonDocument doc(&allocator)
-  // 이 래퍼는 v6 코드 시그니처 호환만 제공
+  // -------- BasicJsonDocument<Allocator> --------
   template <typename TAllocator = AJ::Allocator>
   struct BasicJsonDocument : public DocCompat {
     using allocator_type = TAllocator;
@@ -183,6 +187,10 @@ using ::ArduinoJson::serializeJsonPretty;
 inline bool jsonObjectContainsKey(const JsonObject& obj, const char* key) {
   return !((const ::ArduinoJson::JsonObject&)obj)[key].isNull();
 }
+
+// v6 스타일 array/object size 헬퍼
+inline size_t jsonArraySize(const JsonArray& arr) { return arr.impl.size(); }
+inline size_t jsonObjectSize(const JsonObject& obj) { return obj.impl.size(); }
 
 // v6의 String append 동작 복원
 #if defined(String) || __has_include(<WString.h>)
